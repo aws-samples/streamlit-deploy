@@ -395,8 +395,8 @@ Resources:
                   - iam:CreateServiceLinkedRole
                   - iam:AttachRolePolicy
                 Resource:
-                  - !Sub "arn:aws:iam::${AWS::AccountId}:role/AWSServiceRoleForECS"
-
+                  - "*"
+                  
   StreamlitECSRoleCustomResourceFunction:
     Type: "AWS::Lambda::Function"
     Properties:
