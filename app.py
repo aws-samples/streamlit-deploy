@@ -6,4 +6,4 @@ st.set_page_config(
 )
 
 st.header("Hi, welcome!")
-st.subheader("This is your Amazon Web Service (AWS) deployment!", divider="rainbow")
+st.subheader("This is your Amazon Web Services (AWS) deployment!", divider="rainbow")
