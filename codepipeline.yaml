@@ -311,7 +311,10 @@ Resources:
                         print("Initial CodeBuild failed")
                         cfnresponse.send(event, context, cfnresponse.FAILED, {})
                         return
-
+                    elif request_type == 'Delete':
+                      bucket = boto3.resource("s3").Bucket(event['ResourceProperties']['CODEBUCKET'])
+                      bucket.object_versions.delete()
+                      bucket.objects.all().delete()
                   except Exception as ex:
                     print(ex)
                     bucket = boto3.resource("s3").Bucket(event['ResourceProperties']['CODEBUCKET'])
