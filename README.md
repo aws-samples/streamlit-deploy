@@ -114,11 +114,14 @@ To get more information about creating secure parameters using SSM Parameter sto
 ### Step :two: Use boto3 for accessing Secrets within your streamlit app
 
 ```
-import boto3
-ssm = boto3.client('ssm', 'us-east-1')
+from boto3.session import Session
+ssm = Session().client("ssm")
 
-USERNAME =  ssm.get_parameter(Name='/streamlitapp/AGENT_ID',WithDecryption=True)["Parameter"]["Value"]
+USERNAME =  ssm.get_parameter(Name='/streamlitapp/EnvironmentName/USERNAME',WithDecryption=True)["Parameter"]["Value"]
 ```
+
+> [!IMPORTANT]   
+> Replace EnvironmentName with value passed in infrastructure.yaml 
 
 ## Invoking AWS Services from Web App
 

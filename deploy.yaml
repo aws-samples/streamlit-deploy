@@ -209,7 +209,7 @@ Resources:
                 Action:
                   - "ssm:GetParameter"
                 Resource:
-                  - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/streamlitapp/*"
+                  - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/streamlitapp/${EnvironmentName}/*"
               - Effect: 'Allow'
                 Action:
                   - "kms:Decrypt"
