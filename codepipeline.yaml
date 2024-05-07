@@ -55,7 +55,7 @@ Parameters:
   GitURL:
     Type: String
     Description: Initial repository for basic Hello World application
-    Default: https://github.com/aws-samples/aws-streamlit-deploy-cicd.git
+    Default: https://github.com/aws-samples/streamlit-deploy.git
 
   EnvironmentName:
     Description: Unique name to distinguish different web application in the same AWS account (min length 1 and max length 4)
@@ -101,6 +101,11 @@ Conditions:
     - 'false'
 
 Resources:
+
+  #############################
+  ##### Nested VPC Stack #####
+  ###########################
+
   # VPC Infrastructure
   Infrastructure:
     Condition: IsDeployVPCInfrastructure
@@ -112,12 +117,21 @@ Resources:
       TemplateURL: !Sub https://s3.amazonaws.com/${StreamlitCodeS3Bucket}/infrastructure.yaml
       Parameters:
         EnvironmentName: !Ref EnvironmentName
+
+  ##################################
+  ##### ECR for Streamlit App #####
+  ###############################
+
   # Container Repository
   StreamlitImageRepo:
     Type: AWS::ECR::Repository
     Properties:
       EmptyOnDelete: true
   
+  #######################
+  ##### S3 Buckets #####
+  #####################
+
   # Artifact Bucket
   StreamlitArtifactStore:
     Type: AWS::S3::Bucket
@@ -147,7 +161,9 @@ Resources:
             Effect: Deny
             Principal: '*'
             Action: s3:*
-            Resource: !Join [ '', [ !GetAtt StreamlitArtifactStore.Arn, '/*' ] ]
+            Resource: 
+              - !Sub arn:aws:s3:::${StreamlitArtifactStore}/*
+              - !Sub arn:aws:s3:::${StreamlitArtifactStore}
             Condition:
               Bool:
                 aws:SecureTransport: false
@@ -158,14 +174,64 @@ Resources:
     Properties:
       VersioningConfiguration:
         Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+  
+  StreamlitCodeS3BucketPolicy:
+    Type: 'AWS::S3::BucketPolicy'
+    Properties:
+      Bucket: !Ref StreamlitCodeS3Bucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Action:
+              - 's3:*'
+            Effect: Deny
+            Resource: 
+              - !Sub arn:aws:s3:::${StreamlitCodeS3Bucket}/*
+              - !Sub arn:aws:s3:::${StreamlitCodeS3Bucket}
+            Principal: "*"
+            Condition:
+              Bool:
+                'aws:SecureTransport': 'false'
   
   # CloudTrail Bucket
   StreamlitCloudTrailBucket:
     Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
     Properties:
-      LoggingConfiguration:
-        DestinationBucketName: !If [IsDeployVPCInfrastructure, !GetAtt Infrastructure.Outputs.LoggingBucket, !ImportValue Basic-LoggingBucket]
-        LogFilePrefix: !Sub trail-${EnvironmentName}-logs
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  StreamlitCloudTrailBucketPolicy:
+    Type: 'AWS::S3::BucketPolicy'
+    Properties:
+      Bucket: !Ref StreamlitCloudTrailBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Action:
+              - 's3:*'
+            Effect: Deny
+            Resource: 
+              - !Sub arn:aws:s3:::${StreamlitCloudTrailBucket}/*
+              - !Sub arn:aws:s3:::${StreamlitCloudTrailBucket}
+            Principal: "*"
+            Condition:
+              Bool:
+                'aws:SecureTransport': 'false'
+
+  ###########################
+  ##### CustomResource #####
+  #########################
 
   # Code Build Initial
   StreamlitInitBuildRole:
@@ -399,9 +465,11 @@ Resources:
                       bucket.objects.all().delete()
 
                       bucket = boto3.resource("s3").Bucket(event['ResourceProperties']['ARTIFACTBUCKET'])
+                      bucket.object_versions.delete()
                       bucket.objects.all().delete()
                       
                       bucket = boto3.resource("s3").Bucket(event['ResourceProperties']['TRAILBUCKET'])
+                      bucket.object_versions.delete()
                       bucket.objects.all().delete()
                       stack_name="${StackName}"
                       try:
@@ -428,6 +496,10 @@ Resources:
       CODEBUCKET: !Ref StreamlitCodeS3Bucket
       ARTIFACTBUCKET: !Ref StreamlitArtifactStore
       TRAILBUCKET: !Ref StreamlitCloudTrailBucket
+
+  #########################
+  ##### CodePipeline #####
+  #######################
 
   # CodePipeline Roles
   StreamlitCodeBuildExecutionRole:
@@ -563,10 +635,11 @@ Resources:
                   - 'iam:PassRole'
                   - 'sts:AssumeRole'
                 Resource:
-                  - !Sub arn:aws:iam::${AWS::AccountId}:role/StreamlitScalingRole-${EnvironmentName}
                   - !Sub arn:aws:iam::${AWS::AccountId}:role/StreamlitExecutionRole-${EnvironmentName}
                   - !Sub arn:aws:iam::${AWS::AccountId}:role/StreamlitECSTaskRole-${EnvironmentName}
                   - !Sub arn:aws:iam::${AWS::AccountId}:role/ECSCustomRole-${EnvironmentName}
+                  - !Sub arn:aws:iam::${AWS::AccountId}:role/aws-service-role/elasticloadbalancing.amazonaws.com/AWSServiceRoleForElasticLoadBalancing
+                  - !Sub arn:aws:iam::${AWS::AccountId}:role/aws-service-role/ecs.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_ECSService
               - Effect: 'Allow'
                 Action:
                   - 's3:GetBucketAcl'
@@ -662,26 +735,36 @@ Resources:
                   - 'ec2:CreateSecurityGroup'
                   - 'ec2:DescribeSecurityGroups'
                   - 'ec2:CreateTags'
+                  - 'ec2:DescribeVpcs'
+                  - 'ec2:DescribeInternetGateways'
+                  - 'ec2:DescribeAccountAttributes'
+                  - 'ec2:DescribeSubnets'
                 Resource:
                   - "*"        
               - Effect: 'Allow'
                 Action:                  
                   - 'ec2:DeleteSecurityGroup'
+                  - 'ec2:RevokeSecurityGroupIngress'
+                  - 'ec2:RevokeSecurityGroupEgress'
                   - 'ec2:AuthorizeSecurityGroupIngress'
+                  - 'ec2:AuthorizeSecurityGroupEgress'
                 Resource:
                   - "*"
                 Condition:
                   StringEquals:
-                    'aws:ResourceTag/aws:cloudformation:logical-id': 'StreamlitALBSecurityGroup'
+                    'aws:ResourceTag/Name': !Join ['-', ['StreamlitALBSecurityGroup', !Ref EnvironmentName]]
               - Effect: 'Allow'
                 Action:                  
                   - 'ec2:DeleteSecurityGroup'
+                  - 'ec2:RevokeSecurityGroupIngress'
+                  - 'ec2:RevokeSecurityGroupEgress'
                   - 'ec2:AuthorizeSecurityGroupIngress'
+                  - 'ec2:AuthorizeSecurityGroupEgress'
                 Resource:
                   - "*"
                 Condition:                 
                   StringEquals:
-                    'aws:ResourceTag/aws:cloudformation:logical-id': 'StreamlitContainerSecurityGroup'
+                    'aws:ResourceTag/Name': !Join ['-', ['StreamlitContainerSecurityGroup', !Ref EnvironmentName]]
               - Effect: 'Allow'
                 Action:                  
                   - 'elasticloadbalancing:DeleteLoadBalancer'
@@ -703,8 +786,17 @@ Resources:
                   - 'elasticloadbalancing:DescribeListeners'
                   - 'elasticloadbalancing:DescribeLoadBalancers'
                   - 'elasticloadbalancing:DescribeRules'
+                  - 'elasticloadbalancing:ModifyLoadBalancerAttributes'
                 Resource:
                   - "*"
+              - Effect: 'Allow'
+                Action:                  
+                  - 'iam:CreateServiceLinkedRole'
+                  - 'iam:AttachRolePolicy'
+                  - 'iam:PutRolePolicy'
+                  - 'sts:AssumeRole'
+                Resource:
+                  - !Sub arn:aws:iam::${AWS::AccountId}:role/aws-service-role/ecs.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_ECSService
 
   # CodeBuild CodePipeline
   StreamlitCodeBuild:
@@ -1159,4 +1251,3 @@ Outputs:
   StreamlitCodeS3Bucket:
     Value: !Ref StreamlitCodeS3Bucket
     Description: Name of code S3 bucket
-

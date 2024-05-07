@@ -1,6 +1,28 @@
 AWSTemplateFormatVersion: 2010-09-09
 Description: Basic VPC Infrastructure
-
+Metadata:
+  'AWS::CloudFormation::Interface':
+    ParameterGroups:
+      - Label:
+          default: 'VPCConfig'
+        Parameters:
+        - Vpccidr
+        - PublicSubnetAcidr
+        - PublicSubnetBcidr
+        - PrivateSubnetAcidr
+        - PrivateSubnetBcidr
+      - Label:
+          default: 'EnvironmentConfig'
+        Parameters:
+        - EnvironmentName
+Mappings:
+  # Cloudfront Mappings
+  ELBRegionMap:
+    'us-east-1':
+      ELBAccountId: '127311923021'
+    'us-west-2':
+      ELBAccountId: '797873946194'
+      
 Parameters:
   Vpccidr:
     Description: Please enter the IP range (CIDR notation) for the VPC
@@ -27,26 +49,6 @@ Parameters:
     Type: String
     Default: 10.0.3.0/24
   
-  PrivateSubnetAcidr:
-    Description: Please enter the IP range (CIDR notation) for the private subnet in the first Availability Zone
-    Type: String
-    Default: 10.0.4.0/24
-  
-  PrivateSubnetBcidr:
-    Description: Please enter the IP range (CIDR notation) for the private subnet in the second Availability Zone
-    Type: String
-    Default: 10.0.5.0/24
-  
-  ProtectedSubnetAcidr:
-    Description: Please enter the IP range (CIDR notation) for the protected subnet in the first Availability Zone
-    Type: String
-    Default: 10.0.6.0/24
-  
-  ProtectedSubnetBcidr:
-    Description: Please enter the IP range (CIDR notation) for the protected subnet in the second Availability Zone
-    Type: String
-    Default: 10.0.7.0/24
-  
   EnvironmentName:
     Description: Unique name to distinguish different web application min chars 1 and max chars 4
     Type: String
@@ -60,6 +62,9 @@ Resources:
     DependsOn: StreamlitECSRoleCustomResource
     Properties:
       ClusterName: !Join ['-', ['StreamlitCluster', !Ref EnvironmentName]]
+      ClusterSettings:
+        - Name: containerInsights
+          Value: enabled
 
   # Logs Policy
   LogsPolicy:
@@ -78,8 +83,8 @@ Resources:
               - 'logs:PutLogEvents'
               - 'logs:PutRetentionPolicy'
             Resource: '*'
-
-  # Log Bucket
+  
+  # Logging bucket
   LoggingBucket: 
     Type: "AWS::S3::Bucket"
     DeletionPolicy: Retain
@@ -92,9 +97,12 @@ Resources:
         BlockPublicPolicy: true
         IgnorePublicAcls: true
         RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
 
   LoggingBucketPolicy:
     Type: 'AWS::S3::BucketPolicy'
+    DeletionPolicy: Retain
     Properties:
       Bucket: !Ref LoggingBucket
       PolicyDocument:
@@ -107,6 +115,25 @@ Resources:
               Service: logging.s3.amazonaws.com
             Resource: 
               - !Sub arn:aws:s3:::${LoggingBucket}/*
+          - Action:
+              - 's3:PutObject'
+            Effect: Allow
+            Principal:
+              AWS: !Sub 
+                    - arn:aws:iam::${ElbAccount}:root
+                    - {ElbAccount: !FindInMap [ELBRegionMap, !Ref 'AWS::Region', ELBAccountId]}
+            Resource: 
+              - !Sub arn:aws:s3:::${LoggingBucket}/alb/logs/AWSLogs/${AWS::AccountId}/*
+          - Action:
+              - 's3:*'
+            Effect: Deny
+            Resource: 
+              - !Sub arn:aws:s3:::${LoggingBucket}/*
+              - !Sub arn:aws:s3:::${LoggingBucket}
+            Principal: "*"
+            Condition:
+              Bool:
+                'aws:SecureTransport': 'false'
 
   # VPC
   VPC:
@@ -210,32 +237,6 @@ Resources:
         - Key: Name
           Value: PrivateSubnetB
 
-  ProtectedSubnetA:
-    Type: AWS::EC2::Subnet
-    Properties:
-      VpcId: !Ref VPC
-      AvailabilityZone: !Select 
-                          - 0
-                          - Fn::GetAZs: !Ref 'AWS::Region'
-      CidrBlock: !Ref ProtectedSubnetAcidr
-      MapPublicIpOnLaunch: false
-      Tags:
-        - Key: Name
-          Value: ProtectedSubnetA
-
-  ProtectedSubnetB:
-    Type: AWS::EC2::Subnet
-    Properties:
-      VpcId: !Ref VPC
-      AvailabilityZone: !Select 
-                          - 1
-                          - Fn::GetAZs: !Ref 'AWS::Region'
-      CidrBlock: !Ref ProtectedSubnetBcidr
-      MapPublicIpOnLaunch: false
-      Tags:
-        - Key: Name
-          Value: ProtectedSubnetB
-
   # NAT Gateway
   NatGatewayAEIP:
     Type: AWS::EC2::EIP
@@ -333,35 +334,6 @@ Resources:
       RouteTableId: !Ref PrivateRouteTableB
       SubnetId: !Ref PrivateSubnetB
 
-  # Protected Route Table
-  ProtectedRouteTableA:
-    Type: AWS::EC2::RouteTable
-    Properties:
-      VpcId: !Ref VPC
-      Tags:
-        - Key: Name
-          Value: ProtectedRouteTableA
-
-  ProtectedSubnetARouteTableAssociation:
-    Type: AWS::EC2::SubnetRouteTableAssociation
-    Properties:
-      RouteTableId: !Ref ProtectedRouteTableA
-      SubnetId: !Ref ProtectedSubnetA
-
-  ProtectedRouteTableB:
-    Type: AWS::EC2::RouteTable
-    Properties:
-      VpcId: !Ref VPC
-      Tags:
-        - Key: Name
-          Value: ProtectedRouteTableB
-
-  ProtectedSubnetBRouteTableAssociation:
-    Type: AWS::EC2::SubnetRouteTableAssociation
-    Properties:
-      RouteTableId: !Ref ProtectedRouteTableB
-      SubnetId: !Ref ProtectedSubnetB
-
   # Custom ECS resource
   StreamlitECSRoleCustomResourceRole:
     Type: AWS::IAM::Role
@@ -396,7 +368,7 @@ Resources:
                   - iam:AttachRolePolicy
                 Resource:
                   - "*"
-                  
+
   StreamlitECSRoleCustomResourceFunction:
     Type: "AWS::Lambda::Function"
     Properties:
@@ -492,18 +464,6 @@ Outputs:
     Value: !Ref PrivateSubnetB
     Export:
       Name: Basic-PrivateSubnetB
-
-  ProtectedSubnetA:
-    Description: "ProtectedSubnetA"
-    Value: !Ref ProtectedSubnetA
-    Export:
-      Name: Basic-ProtectedSubnetA
-
-  ProtectedSubnetB:
-    Description: "ProtectedSubnetB"
-    Value: !Ref ProtectedSubnetB
-    Export:
-      Name: Basic-ProtectedSubnetB
   
   StreamlitCluster:
     Description: "StreamlitCluster"
