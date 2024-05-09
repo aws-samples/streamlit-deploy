@@ -188,9 +188,7 @@ StreamlitECSTaskRole-<EnvironmentName>`:
 
 
 ## Architecture development deployment
-
 ![architecture-development](/architecture-development.png)
-
 ## Steps to Deploy Hello World App development deployment
 
 > [!NOTE]  
