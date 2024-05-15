@@ -17,7 +17,7 @@ An AWS Account, to deploy the infrastructure. You can find more instructions to 
 	3. [Streamlit Secrets Management](#streamlit-secrets-management-cicd-deployment)
 	4. [Invoking AWS Services from Web App](#invoking-aws-services-from-web-app-cicd-deployment)
 	5. [Clean Up](#clean-up-cicd-deployment)
-2. [Architecture test deployment](#Architecture-development-deployment)
+2. [Architecture Development deployment](#Architecture-development-deployment)
     1. [Steps to Deploy Hello World App](#steps-to-deploy-hello-world-app-development-deployment)
 	2. [Clean Up](#clean-up-development-deployment)
 
@@ -187,9 +187,9 @@ StreamlitECSTaskRole-<EnvironmentName>`:
 - Delete the role `StreamlitCfnRole-<EnvironmentName>` manually.
 
 
-## Architecture development deployment
+## Architecture Development deployment
 ![architecture-development](/architecture-development.png)
-## Steps to Deploy Hello World App development deployment
+## Steps to Deploy Hello World App Development deployment
 
 > [!NOTE]  
 > Optionally, you can deploy the Virtual Private Cloud (VPC) infrastructure using the provided [infrastructure.yaml](/infrastructure.yaml) file, or utilize the default VPC. The required infrastructure components, including Amazon CloudFront, an Application Load Balancer, and Amazon Elastic Container Service (ECS) on AWS Fargate instances, will be deployed within the chosen VPC environment.
@@ -211,7 +211,7 @@ StreamlitECSTaskRole-<EnvironmentName>`:
 
 After the successful completion of `development.yaml`. Get the CloudFront URL from the `Output` of the stack. Paste it in the browser to view the web application.
 
-## Clean Up development deployment
+## Clean Up Development deployment
 - Open the CloudFormation console.
 - Select the stack `infrastructure.yaml` you created then click **Delete** twice. Wait for the stack to be deleted.
 - Select the stack `development.yaml` you created then click **Delete** twice. Wait for the stack to be deleted.
