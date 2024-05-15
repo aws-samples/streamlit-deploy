@@ -32,7 +32,7 @@ An AWS Account, to deploy the infrastructure. You can find more instructions to 
 5. app.zip PUT event triggers the CodePipeline and triggers the CodeBuild stage.
 6. This CodeBuild is responsible for creating a container image using the DockerFile and pushing this image into ECR. 
 7. Deploy stage is trigged.
-8. Cloudformation stage deploys the [deploy.yaml](/deploy.yaml) stack. This stack takes the new docker image URI as input. This stage creates the Hello world app. Follow steps [here](#steps-to-deploy-hello-world-app).
+8. Cloudformation stage deploys the [deploy.yaml](/deploy.yaml) stack. This stack takes the new docker image URI as input. This stage creates the Hello world app. Follow steps [here](#steps-to-deploy-hello-world-app-cicd-deployment).
 9. After successfull creation of [deploy.yaml](/deploy.yaml) stack, Cloudfront invalidate cache stage is triggered.
 10. Developer Customize's the Web App, zip's new content and uploads it into Amazon S3. This triggers the CodePipeline which results in new Docker image. These docker images replaces the old Fargate tasks. Follow steps [here](#steps-to-customize-web-app-cicd-deployment) to customize app.
 
