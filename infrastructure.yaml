@@ -70,7 +70,6 @@ Resources:
   LogsPolicy:
     Type: "AWS::IAM::ManagedPolicy"
     Properties:
-      ManagedPolicyName: 'LogsPolicy'
       Path: /
       ManagedPolicyName: !Sub "LogsPolicy${EnvironmentName}"
       PolicyDocument:
