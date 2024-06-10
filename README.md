@@ -1,4 +1,4 @@
-<meta name="image" property="og:image" content="/architecture-cicd.png">
+<meta name="image" property="og:image" content="https://github.com/aws-samples/streamlit-deploy/raw/main/architecture-cicd.png">
 
 # Deploy Streamlit App on ECS
 
