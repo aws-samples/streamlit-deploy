@@ -11,17 +11,21 @@ This repository provides base code for Streamlit application's and is not produc
 An AWS Account, to deploy the infrastructure. You can find more instructions to create your account [here](https://aws.amazon.com/free).
 
 ## Table of contents
-1. [Architecture CICD deployment](#architecture-cicd-deployment)
+
+You can choose to deploy your Streamlit web application using two different deployment options. The first option provides a CI/CD (Continuous Integration/Continuous Deployment) pipeline, which is great for development and production environments. The second option provides a quick setup for Proof of Concept (PoC) purposes.
+
+1. [Continuous Integration and Continuous Delivery Deployment](#architecture-cicd-deployment)
 	1. [Steps to Deploy Hello World App](#steps-to-deploy-hello-world-app-cicd-deployment)
 	2. [Steps to Customize Web App](#steps-to-customize-web-app-cicd-deployment)
 	3. [Streamlit Secrets Management](#streamlit-secrets-management-cicd-deployment)
 	4. [Invoking AWS Services from Web App](#invoking-aws-services-from-web-app-cicd-deployment)
 	5. [Clean Up](#clean-up-cicd-deployment)
-2. [Architecture Development deployment](#Architecture-development-deployment)
-    1. [Steps to Deploy Hello World App](#steps-to-deploy-hello-world-app-development-deployment)
-	2. [Clean Up](#clean-up-development-deployment)
 
-## Architecture CICD deployment
+2. [Simple deployment](#architecture-simple-deployment)
+    1. [Steps to Deploy Hello World App](#steps-to-deploy-hello-world-app-development-deployment)
+    2. [Clean Up](#clean-up-simple-deployment)
+
+## Architecture CICD Deployment
 
 ![architecture-cicd](/architecture-cicd.png)
 
@@ -180,14 +184,14 @@ StreamlitECSTaskRole-<EnvironmentName>`:
 > [!CAUTION]   
 > Replace {Region}, {Account}, {AgentId}, and {AgentAliasId} with valid values in the above policy
 
-## Clean Up CICD deployment
+## Clean up CICD deployment
 - Open the CloudFormation console.
 - Select the stack `codepipeline.yaml` you created then click **Delete** twice. Wait for the stack to be deleted.
 - Delete the nested stack `<StackName>-Infra-<StackId>` created by `codepipeline.yaml`. Please ensure that you refrain from deleting this stack if there are any additional web deployments utilizing this repository within the specified region of your current work environment.
 - Delete the role `StreamlitCfnRole-<EnvironmentName>` manually.
 
 
-## Architecture Development deployment
+## Architecture Simple Deployment
 ![architecture-development](/architecture-development.png)
 ## Steps to Deploy Hello World App Development deployment
 
@@ -211,7 +215,7 @@ StreamlitECSTaskRole-<EnvironmentName>`:
 
 After the successful completion of `development.yaml`. Get the CloudFront URL from the `Output` of the stack. Paste it in the browser to view the web application.
 
-## Clean Up Development deployment
+## Clean up simple deployment
 - Open the CloudFormation console.
 - Select the stack `infrastructure.yaml` you created then click **Delete** twice. Wait for the stack to be deleted.
 - Select the stack `development.yaml` you created then click **Delete** twice. Wait for the stack to be deleted.
