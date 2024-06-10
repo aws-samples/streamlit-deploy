@@ -1,3 +1,5 @@
+<meta name="image" property="og:image" content="/architecture-cicd.png">
+
 # Deploy Streamlit App on ECS
 
 ## Description
