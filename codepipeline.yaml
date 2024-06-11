@@ -787,6 +787,8 @@ Resources:
                   - 'elasticloadbalancing:DescribeLoadBalancers'
                   - 'elasticloadbalancing:DescribeRules'
                   - 'elasticloadbalancing:ModifyLoadBalancerAttributes'
+                  - 'elasticloadbalancing:ModifyTargetGroup'
+                  - 'elasticloadbalancing:ModifyTargetGroupAttributes'
                 Resource:
                   - "*"
               - Effect: 'Allow'
