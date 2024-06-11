@@ -354,7 +354,11 @@ Resources:
       TargetType: ip
       VpcId: !Ref StreamlitVPC
       Name: !Join ['-', ['StreamlitContainerTG', !Ref EnvironmentName]]
-
+      TargetGroupAttributes:
+        - Key: stickiness.enabled
+          Value: true
+        - Key: stickiness.type
+          Value: lb_cookie
 
   StreamlitApplicationLoadBalancer:
     Type: "AWS::ElasticLoadBalancingV2::LoadBalancer"
