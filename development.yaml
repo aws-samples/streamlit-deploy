@@ -154,6 +154,10 @@ Resources:
         RestrictPublicBuckets: true
       VersioningConfiguration:
         Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
 
   LoggingBucketPolicy:
     Type: 'AWS::S3::BucketPolicy'
@@ -276,19 +280,33 @@ Resources:
 
                     if request_type == 'Create':
                       desired_role_name = "AWSServiceRoleForECS"
+                      desired_ecs_scaling_role_name = "AWSServiceRoleForApplicationAutoScaling_ECSService"
 
                       try:
-                        iam_client.get_role(RoleName=desired_role_name)
-                        role_exists = True
+                        iam_client.get_role(RoleName=desired_ecs_role_name)
+                        ecs_role_exists = True
                       except ClientError as e:
                         if e.response['Error']['Code'] == 'NoSuchEntity':
-                          role_exists = False
+                          ecs_role_exists = False
                         else:
-                          role_exists = True
-
-                      print(role_exists)
-                      if not role_exists:
+                          ecs_role_exists = True
+                      
+                      try:
+                        iam_client.get_role(RoleName=desired_ecs_scaling_role_name)
+                        ecs_scaling_role_exists = True
+                      except ClientError as e:
+                        if e.response['Error']['Code'] == 'NoSuchEntity':
+                          ecs_scaling_role_exists = False
+                        else:
+                          ecs_scaling_role_exists = True
+                      
+                      print(f"ECS service role exist? {ecs_role_exists}")
+                      if not ecs_role_exists:
                         iam_client.create_service_linked_role(AWSServiceName="ecs.amazonaws.com")
+                      
+                      print(f"ECS scaling service role exist? {ecs_scaling_role_exists}")
+                      if not ecs_scaling_role_exists:
+                        iam_client.create_service_linked_role(AWSServiceName="ecs.application-autoscaling.amazonaws.com")
                   except Exception as ex:
                     print(ex)
                     cfnresponse.send(event, context, cfnresponse.FAILED, {})
@@ -307,54 +325,74 @@ Resources:
       EmptyOnDelete: true
       ImageScanningConfiguration: 
         ScanOnPush: true
+
   # Security Groups
   StreamlitALBSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: Allow http to the internet
+      GroupDescription: !Sub Allow ${ContainerPort} port from Cloudfront
       VpcId: !Ref VPCId
-      SecurityGroupIngress:
-        - IpProtocol: tcp
-          Description: Allow 80 port from all IP
-          FromPort: !Ref ContainerPort
-          ToPort: !Ref ContainerPort
-          SourcePrefixListId: !FindInMap ['CFRegionMap', !Ref 'AWS::Region', 'PrefixListCloudFront']
-      SecurityGroupEgress:
-        - IpProtocol: "-1" 
-          CidrIp: 0.0.0.0/0 
-          Description: "Deny all outbound traffic by default" 
-        - IpProtocol: "tcp"
-          FromPort: 80 
-          ToPort: 80
-          CidrIp: 0.0.0.0/0
-          Description: "Allow HTTP outbound"
       Tags:
         - Key: Name
-          Value: !Join ['-', ['StreamlitALBSecurityGroup', !Ref EnvironmentName]]
+          Value: !Join
+            - '-'
+            - - StreamlitALBSecurityGroup
+              - !Ref EnvironmentName
+
+  ALBSGOutBoundRule:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      GroupId: !GetAtt StreamlitALBSecurityGroup.GroupId
+      IpProtocol: tcp
+      FromPort: !Ref ContainerPort
+      ToPort: !Ref ContainerPort
+      CidrIp: 0.0.0.0/0
+      Description: !Sub Allow outbound ${ContainerPort} port
+
+  ALBSGInBoundRule:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !GetAtt StreamlitALBSecurityGroup.GroupId
+      IpProtocol: tcp
+      FromPort: !Ref ContainerPort
+      ToPort: !Ref ContainerPort
+      SourcePrefixListId: !FindInMap
+        - CFRegionMap
+        - !Ref AWS::Region
+        - PrefixListCloudFront
+      Description: !Sub Allow ${ContainerPort} port from Cloudfront
 
   StreamlitContainerSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
       GroupDescription: Allow container traffic from ALB
       VpcId: !Ref VPCId
-      SecurityGroupIngress:
-        - IpProtocol: tcp
-          Description: Allow Container port from ALB SG
-          FromPort: !Ref ContainerPort
-          ToPort: !Ref ContainerPort
-          CidrIp: "0.0.0.0/0"
-      SecurityGroupEgress:
-        - IpProtocol: "-1" 
-          CidrIp: 0.0.0.0/0 
-          Description: "Deny all outbound traffic by default" 
-        - IpProtocol: "tcp"
-          FromPort: 80 
-          ToPort: 80
-          CidrIp: 0.0.0.0/0
-          Description: "Allow HTTP outbound"
       Tags:
         - Key: Name
-          Value: !Join ['-', ['StreamlitContainerSecurityGroup', !Ref EnvironmentName]]
+          Value: !Join
+            - '-'
+            - - StreamlitContainerSecurityGroup
+              - !Ref EnvironmentName
+
+  ContainerSGOutBoundRule:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      GroupId: !GetAtt StreamlitContainerSecurityGroup.GroupId
+      IpProtocol: -1
+      FromPort: !Ref ContainerPort
+      ToPort: !Ref ContainerPort
+      CidrIp: 0.0.0.0/0
+      Description: !Sub Allow ${ContainerPort} port outbound for all traffic
+
+  ContainerSGInBoundRule:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !GetAtt StreamlitContainerSecurityGroup.GroupId
+      IpProtocol: tcp
+      FromPort: !Ref ContainerPort
+      ToPort: !Ref ContainerPort
+      SourceSecurityGroupId: !Ref StreamlitALBSecurityGroup
+      Description: !Sub Allow ${ContainerPort} port from ALB SG
 
   # Codebuild
   StreamlitCodeBuildExecutionRole:
@@ -785,7 +823,7 @@ Resources:
           Prefix: !Sub distribution-${EnvironmentName}-logs/
         ViewerCertificate:
           CloudFrontDefaultCertificate: true
-          MinimumProtocolVersion: TLSv1.2_2018
+          MinimumProtocolVersion: TLSv1.2_2021
       Tags:
         - Key: CloudfrontStreamlitApp
           Value: !Sub ${AWS::StackName}-Cloudfront

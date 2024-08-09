@@ -267,47 +267,43 @@ Resources:
         ScaleOutCooldown: 10
         # Keep things at or lower than 50% CPU utilization, for example
         TargetValue: !Ref Tv
-
-    # Security Group
   
   # Security Group
   StreamlitALBSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: Allow http to the internet
+      GroupDescription: !Sub Allow ${ContainerPort} port from Cloudfront
       VpcId: !Ref StreamlitVPC
       Tags:
         - Key: Name
-          Value: !Join ['-', ['StreamlitALBSecurityGroup', !Ref EnvironmentName]]
-  
-  ALBSGDefaultOutBoundRule:
-    Type: AWS::EC2::SecurityGroupEgress
-    Properties:
-      GroupId: !GetAtt StreamlitALBSecurityGroup.GroupId
-      IpProtocol: "-1"
-      CidrIp: 0.0.0.0/0
-      Description: Deny all outbound traffic by default
+          Value: !Join
+            - '-'
+            - - StreamlitALBSecurityGroup
+              - !Ref EnvironmentName
 
   ALBSGOutBoundRule:
     Type: AWS::EC2::SecurityGroupEgress
     Properties:
       GroupId: !GetAtt StreamlitALBSecurityGroup.GroupId
       IpProtocol: tcp
-      FromPort: !Ref ContainerPort 
+      FromPort: !Ref ContainerPort
       ToPort: !Ref ContainerPort
       CidrIp: 0.0.0.0/0
-      Description: Allow container port outbound
-  
+      Description: !Sub Allow outbound ${ContainerPort} port
+
   ALBSGInBoundRule:
     Type: AWS::EC2::SecurityGroupIngress
     Properties:
       GroupId: !GetAtt StreamlitALBSecurityGroup.GroupId
       IpProtocol: tcp
-      FromPort: !Ref ContainerPort 
+      FromPort: !Ref ContainerPort
       ToPort: !Ref ContainerPort
-      SourcePrefixListId: !FindInMap ['CFRegionMap', !Ref 'AWS::Region', 'PrefixListCloudFront']
-      Description: Allow container port from CloudFront 
-  
+      SourcePrefixListId: !FindInMap
+        - CFRegionMap
+        - !Ref AWS::Region
+        - PrefixListCloudFront
+      Description: !Sub Allow ${ContainerPort} port from Cloudfront
+
   StreamlitContainerSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -315,35 +311,30 @@ Resources:
       VpcId: !Ref StreamlitVPC
       Tags:
         - Key: Name
-          Value: !Join ['-', ['StreamlitContainerSecurityGroup', !Ref EnvironmentName]]
-
-  ContainerSGDefaultOutBoundRule:
-    Type: AWS::EC2::SecurityGroupEgress
-    Properties:
-      GroupId: !GetAtt StreamlitContainerSecurityGroup.GroupId
-      IpProtocol: "-1"
-      CidrIp: 0.0.0.0/0
-      Description: Deny all outbound traffic by default
+          Value: !Join
+            - '-'
+            - - StreamlitContainerSecurityGroup
+              - !Ref EnvironmentName
 
   ContainerSGOutBoundRule:
     Type: AWS::EC2::SecurityGroupEgress
     Properties:
       GroupId: !GetAtt StreamlitContainerSecurityGroup.GroupId
-      IpProtocol: tcp
-      FromPort: !Ref ContainerPort 
+      IpProtocol: -1
+      FromPort: !Ref ContainerPort
       ToPort: !Ref ContainerPort
       CidrIp: 0.0.0.0/0
-      Description: Allow container port outbound
-  
+      Description: !Sub Allow ${ContainerPort} port outbound for all traffic
+
   ContainerSGInBoundRule:
     Type: AWS::EC2::SecurityGroupIngress
     Properties:
       GroupId: !GetAtt StreamlitContainerSecurityGroup.GroupId
       IpProtocol: tcp
-      FromPort: !Ref ContainerPort 
+      FromPort: !Ref ContainerPort
       ToPort: !Ref ContainerPort
       SourceSecurityGroupId: !Ref StreamlitALBSecurityGroup
-      Description: Allow Container port from ALB SG
+      Description: !Sub Allow ${ContainerPort} port from ALB SG
   
   # Load Balancer
   StreamlitContainerTargetGroup:
@@ -459,7 +450,7 @@ Resources:
           Prefix: !Sub distribution-${EnvironmentName}-logs/
         ViewerCertificate:
           CloudFrontDefaultCertificate: true
-          MinimumProtocolVersion: TLSv1.2_2018
+          MinimumProtocolVersion: TLSv1.2_2021
         # WebACLId: !GetAtt CloudFrontWebACL.Arn
       Tags:
         - Key: CloudfrontStreamlitApp

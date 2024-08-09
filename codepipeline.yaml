@@ -127,6 +127,8 @@ Resources:
     Type: AWS::ECR::Repository
     Properties:
       EmptyOnDelete: true
+      ImageScanningConfiguration: 
+        ScanOnPush: true
   
   #######################
   ##### S3 Buckets #####
@@ -139,6 +141,17 @@ Resources:
       LoggingConfiguration:
         DestinationBucketName: !If [IsDeployVPCInfrastructure, !GetAtt Infrastructure.Outputs.LoggingBucket, !ImportValue Basic-LoggingBucket]
         LogFilePrefix: !Sub artifact-${EnvironmentName}-logs
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
 
   StreamlitArtifactStorePolicy:
     Type: AWS::S3::BucketPolicy
@@ -148,30 +161,24 @@ Resources:
         Version: 2012-10-17
         Statement:
           -
-            Sid: DenyUnEncryptedObjectUploads
+            Action:
+              - s3:*
             Effect: Deny
+            Resource:
+              - !GetAtt StreamlitArtifactStore.Arn
+              - !GetAtt StreamlitArtifactStore.Arn
             Principal: '*'
-            Action: s3:PutObject
-            Resource: !Join [ '', [ !GetAtt StreamlitArtifactStore.Arn, '/*' ] ]
-            Condition:
-              StringNotEquals: 
-                s3:x-amz-server-side-encryption: aws:kms
-          -
-            Sid: DenyInsecureConnections
-            Effect: Deny
-            Principal: '*'
-            Action: s3:*
-            Resource: 
-              - !Sub arn:aws:s3:::${StreamlitArtifactStore}/*
-              - !Sub arn:aws:s3:::${StreamlitArtifactStore}
             Condition:
               Bool:
-                aws:SecureTransport: false
+                aws:SecureTransport: 'false'
   
   # CodeBucket
   StreamlitCodeS3Bucket:
     Type: AWS::S3::Bucket
     Properties:
+      LoggingConfiguration:
+        DestinationBucketName: !If [IsDeployVPCInfrastructure, !GetAtt Infrastructure.Outputs.LoggingBucket, !ImportValue Basic-LoggingBucket]
+        LogFilePrefix: !Sub artifact-${EnvironmentName}-logs
       VersioningConfiguration:
         Status: Enabled
       PublicAccessBlockConfiguration:
@@ -179,7 +186,11 @@ Resources:
         BlockPublicPolicy: true
         IgnorePublicAcls: true
         RestrictPublicBuckets: true
-  
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+              
   StreamlitCodeS3BucketPolicy:
     Type: 'AWS::S3::BucketPolicy'
     Properties:
@@ -210,7 +221,11 @@ Resources:
         BlockPublicPolicy: true
         IgnorePublicAcls: true
         RestrictPublicBuckets: true
-
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+              
   # StreamlitCloudTrailBucketPolicy:
   #   Type: 'AWS::S3::BucketPolicy'
   #   Properties:
