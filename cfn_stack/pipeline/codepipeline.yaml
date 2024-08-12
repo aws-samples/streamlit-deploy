@@ -93,6 +93,14 @@ Conditions:
   #   - !Ref DeployVPCInfrastructure
   #   - 'false'
 
+Mappings:
+
+  # Cloudfront Mappings
+  ELBRegionMap:
+    'us-east-1':
+      ELBAccountId: '127311923021'
+    'us-west-2':
+      ELBAccountId: '797873946194'
 Resources:
 
   ##############################
@@ -114,6 +122,7 @@ Resources:
     Condition: IsDeployVPCInfrastructure
     DeletionPolicy: Retain
     UpdateReplacePolicy: Retain
+    DependsOn: StreamlitBuildCustomResource
     Type: AWS::CloudFormation::Stack
     Properties:
       TemplateURL: !Sub https://s3.amazonaws.com/${StreamlitCodeS3Bucket}/infrastructure.yaml
@@ -482,9 +491,10 @@ Resources:
                   - 'iam:PassRole'
                   - 'sts:AssumeRole'
                 Resource:
-                  - !Sub arn:aws:iam::${AWS::AccountId}:role/StreamlitExecutionRole*
-                  - !Sub arn:aws:iam::${AWS::AccountId}:role/StreamlitECSTaskRole*
-                  - !Sub arn:aws:iam::${AWS::AccountId}:role/ECSCustomRole*
+                  - !Sub arn:aws:iam::${AWS::AccountId}:role/${AWS::StackName}deploy-StreamlitExecutionRole*
+                  - !Sub arn:aws:iam::${AWS::AccountId}:role/${AWS::StackName}deploy-StreamlitECSTaskRole*
+                  - !Sub arn:aws:iam::${AWS::AccountId}:role/${AWS::StackName}deploy-ECSCustomRole*
+                  - !Sub arn:aws:iam::${AWS::AccountId}:role/${AWS::StackName}deploy-StreamlitAutoScalingRole*
                   - !Sub arn:aws:iam::${AWS::AccountId}:role/aws-service-role/elasticloadbalancing.amazonaws.com/AWSServiceRoleForElasticLoadBalancing
                   - !Sub arn:aws:iam::${AWS::AccountId}:role/aws-service-role/ecs.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_ECSService
               - Effect: 'Allow'
@@ -599,7 +609,7 @@ Resources:
                   - "*"
                 Condition:
                   StringEquals:
-                    'aws:ResourceTag/Name': !Join ['', ['StreamlitALBSecurityGroup', !Sub "${AWS::StackName}"]]
+                    'aws:ResourceTag/Name': !Join ['', ['StreamlitALBSecurityGroup', !Sub "${AWS::StackName}deploy"]]
               - Effect: 'Allow'
                 Action:                  
                   - 'ec2:DeleteSecurityGroup'
@@ -611,7 +621,7 @@ Resources:
                   - "*"
                 Condition:                 
                   StringEquals:
-                    'aws:ResourceTag/Name': !Join ['', ['StreamlitContainerSecurityGroup', !Sub "${AWS::StackName}"]]
+                    'aws:ResourceTag/Name': !Join ['', ['StreamlitContainerSecurityGroup', !Sub "${AWS::StackName}deploy"]]
               - Effect: 'Allow'
                 Action:                  
                   - 'elasticloadbalancing:DeleteLoadBalancer'
@@ -619,10 +629,13 @@ Resources:
                   - 'elasticloadbalancing:DeleteRule'
                   - 'elasticloadbalancing:DeleteTargetGroup'
                 Resource:
-                  - !Sub arn:aws:elasticloadbalancing:${AWS::Region}:${AWS::AccountId}:targetgroup/StreamlitContainerTargetGroup*/*
-                  - !Sub arn:aws:elasticloadbalancing:${AWS::Region}:${AWS::AccountId}:loadbalancer/app/StreamlitApplicationLoadBalancer*/*
-                  - !Sub arn:aws:elasticloadbalancing:${AWS::Region}:${AWS::AccountId}:listener/app/SStreamlitApplicationLoadBalancer*/*/*
-                  - !Sub arn:aws:elasticloadbalancing:${AWS::Region}:${AWS::AccountId}:listener-rule/app/StreamlitApplicationLoadBalancer*/*/*/*
+                  - !Sub arn:aws:elasticloadbalancing:${AWS::Region}:${AWS::AccountId}:targetgroup/*/*
+                  - !Sub arn:aws:elasticloadbalancing:${AWS::Region}:${AWS::AccountId}:loadbalancer/app/*/*
+                  - !Sub arn:aws:elasticloadbalancing:${AWS::Region}:${AWS::AccountId}:listener/app/*/*/*
+                  - !Sub arn:aws:elasticloadbalancing:${AWS::Region}:${AWS::AccountId}:listener-rule/app/*/*/*/*
+                Condition:
+                  StringEquals:
+                    'aws:ResourceTag/Environment': !Join ['', ['StreamlitALB', !Sub "${AWS::StackName}deploy"]]
               - Effect: 'Allow'
                 Action:                  
                   - 'elasticloadbalancing:CreateLoadBalancer'
