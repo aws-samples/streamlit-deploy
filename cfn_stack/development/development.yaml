@@ -15,7 +15,6 @@ Metadata:
         default: 'Environment Configuration'
       Parameters:
       - GitURL
-      - EnvironmentName
     - Label:
         default: 'Autoscaling'
       Parameters:
@@ -63,12 +62,6 @@ Parameters:
     Type: String
     Description: Initial repository for web application
     Default: https://github.com/aws-samples/streamlit-deploy.git
-
-  EnvironmentName:
-    Description: Unique name to distinguish different web application in the same AWS account (min length 1 and max length 4)
-    Type: String
-    MinLength: 1
-    MaxLength: 4
   
   Cpu:
     Description: "CPU of Fargate Task. Make sure you put valid Memory and CPU pair, refer: https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ecs-taskdefinition.html#cfn-ecs-taskdefinition-cpu:~:text=requires%3A%20Replacement-,Cpu,-The%20number%20of"
@@ -139,10 +132,29 @@ Mappings:
       ELBAccountId: '797873946194'
 
 Resources:
-  # Logging bucket
+
+  ####################
+  ##### Logging #####
+  ##################
+  
+  LogsPolicy:
+    Type: "AWS::IAM::ManagedPolicy"
+    Properties:
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: 'Allow'
+            Action:
+              - 'logs:CreateLogGroup'
+              - 'logs:CreateLogStream'
+              - 'logs:PutLogEvents'
+              - 'logs:PutRetentionPolicy'
+            Resource: '*'
+
   LoggingBucket: 
     Type: "AWS::S3::Bucket"
     DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       OwnershipControls:
         Rules:
@@ -162,6 +174,7 @@ Resources:
   LoggingBucketPolicy:
     Type: 'AWS::S3::BucketPolicy'
     DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       Bucket: !Ref LoggingBucket
       PolicyDocument:
@@ -194,139 +207,28 @@ Resources:
               Bool:
                 'aws:SecureTransport': 'false'
 
-  # ECS Cluster
+  ##############################
+  ##### Streamlit Cluster #####
+  ############################
+
   StreamlitCluster:
     Type: AWS::ECS::Cluster
-    DependsOn: StreamlitECSRoleCustomResource
     Properties:
-      ClusterName: !Join ['-', ['StreamlitCluster', !Ref EnvironmentName]]
       ClusterSettings:
         - Name: containerInsights
           Value: enabled
 
-  # Logs Policy
-  LogsPolicy:
-    Type: "AWS::IAM::ManagedPolicy"
-    Properties:
-      ManagedPolicyName: 'LogsPolicy'
-      Path: /
-      ManagedPolicyName: !Sub "LogsPolicy${EnvironmentName}"
-      PolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-          - Effect: 'Allow'
-            Action:
-              - 'logs:CreateLogGroup'
-              - 'logs:CreateLogStream'
-              - 'logs:PutLogEvents'
-              - 'logs:PutRetentionPolicy'
-            Resource: '*'
-  
-  # Custom ECS resource
-  StreamlitECSRoleCustomResourceRole:
-    Type: AWS::IAM::Role
-    Properties:
-      RoleName: !Join ['-', ['ECSCustomRole', !Ref EnvironmentName]]
-      AssumeRolePolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-          - Effect: 'Allow'
-            Principal:
-              Service:
-                - lambda.amazonaws.com
-            Action:
-              - 'sts:AssumeRole'
-      Path: "/"
-      ManagedPolicyArns:
-        - !GetAtt LogsPolicy.PolicyArn  
-      Policies:
-        - PolicyName: IAMPolicy
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - iam:ListRoles
-                Resource:
-                  - "*"
-              - Effect: Allow
-                Action:
-                  - iam:GetRole
-                  - iam:CreateServiceLinkedRole
-                  - iam:AttachRolePolicy
-                Resource:
-                  - "*"
-                  
-  StreamlitECSRoleCustomResourceFunction:
-    Type: "AWS::Lambda::Function"
-    Properties:
-      FunctionName: !Join ['-', ['ECSCustomF', !Ref EnvironmentName]]
-      Handler: index.handler
-      Role: !GetAtt StreamlitECSRoleCustomResourceRole.Arn
-      Timeout: 300
-      Runtime: python3.12
-      Code:
-        ZipFile: !Sub |
-              import boto3
-              from botocore.exceptions import ClientError
-              import cfnresponse
-              iam_client = boto3.client('iam')
-
-              def handler(event, context):
-                  
-                  try:
-                    request_type = event['RequestType']
-                    print(request_type)
-
-                    if request_type == 'Create':
-                      desired_role_name = "AWSServiceRoleForECS"
-                      desired_ecs_scaling_role_name = "AWSServiceRoleForApplicationAutoScaling_ECSService"
-
-                      try:
-                        iam_client.get_role(RoleName=desired_ecs_role_name)
-                        ecs_role_exists = True
-                      except ClientError as e:
-                        if e.response['Error']['Code'] == 'NoSuchEntity':
-                          ecs_role_exists = False
-                        else:
-                          ecs_role_exists = True
-                      
-                      try:
-                        iam_client.get_role(RoleName=desired_ecs_scaling_role_name)
-                        ecs_scaling_role_exists = True
-                      except ClientError as e:
-                        if e.response['Error']['Code'] == 'NoSuchEntity':
-                          ecs_scaling_role_exists = False
-                        else:
-                          ecs_scaling_role_exists = True
-                      
-                      print(f"ECS service role exist? {ecs_role_exists}")
-                      if not ecs_role_exists:
-                        iam_client.create_service_linked_role(AWSServiceName="ecs.amazonaws.com")
-                      
-                      print(f"ECS scaling service role exist? {ecs_scaling_role_exists}")
-                      if not ecs_scaling_role_exists:
-                        iam_client.create_service_linked_role(AWSServiceName="ecs.application-autoscaling.amazonaws.com")
-                  except Exception as ex:
-                    print(ex)
-                    cfnresponse.send(event, context, cfnresponse.FAILED, {})
-                  else:
-                    cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
-  
-  StreamlitECSRoleCustomResource:
-    Type: Custom::ECSRole
-    Properties:
-      ServiceToken: !GetAtt StreamlitECSRoleCustomResourceFunction.Arn 
-
-  # Container Repository
   StreamlitImageRepo:
     Type: AWS::ECR::Repository
     Properties:
       EmptyOnDelete: true
       ImageScanningConfiguration: 
         ScanOnPush: true
+  
+  ############################
+  ##### Security Groups #####
+  ##########################
 
-  # Security Groups
   StreamlitALBSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -334,10 +236,7 @@ Resources:
       VpcId: !Ref VPCId
       Tags:
         - Key: Name
-          Value: !Join
-            - '-'
-            - - StreamlitALBSecurityGroup
-              - !Ref EnvironmentName
+          Value: !Sub "StreamlitALBSecurityGroup${AWS::StackName}"
 
   ALBSGOutBoundRule:
     Type: AWS::EC2::SecurityGroupEgress
@@ -369,10 +268,7 @@ Resources:
       VpcId: !Ref VPCId
       Tags:
         - Key: Name
-          Value: !Join
-            - '-'
-            - - StreamlitContainerSecurityGroup
-              - !Ref EnvironmentName
+          Value: !Sub "StreamlitContainerSecurityGroup${AWS::StackName}"
 
   ContainerSGOutBoundRule:
     Type: AWS::EC2::SecurityGroupEgress
@@ -394,173 +290,13 @@ Resources:
       SourceSecurityGroupId: !Ref StreamlitALBSecurityGroup
       Description: !Sub Allow ${ContainerPort} port from ALB SG
 
-  # Codebuild
-  StreamlitCodeBuildExecutionRole:
-    Type: 'AWS::IAM::Role'
-    Properties:
-      RoleName: !Join ['-', ['StreamlitCodeBuildRole', !Ref EnvironmentName]]
-      AssumeRolePolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-          - Effect: 'Allow'
-            Principal:
-              Service:
-                - 'codebuild.amazonaws.com'
-            Action:
-              - 'sts:AssumeRole'
-      ManagedPolicyArns:
-        - !GetAtt LogsPolicy.PolicyArn
-      Policies:
-        - PolicyName: 'CodeBuildPolicy'
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: 'Allow'
-                Action:
-                  - 'ecr:GetAuthorizationToken'
-                Resource:
-                  - '*'
-              - Effect: 'Allow'
-                Action:
-                  - 'ecr:UploadLayerPart'
-                  - 'ecr:PutImage'
-                  - 'ecr:InitiateLayerUpload'
-                  - 'ecr:CompleteLayerUpload'
-                  - 'ecr:BatchCheckLayerAvailability'
-                Resource:
-                  - !GetAtt StreamlitImageRepo.Arn
+  #################################
+  ##### ECS Task and Service #####
+  ###############################
 
-  StreamlitCodeBuild:
-    Type: AWS::CodeBuild::Project
-    Properties:
-      Name: !Join ['-', ['StreamlitCodeBuild', !Ref EnvironmentName]]
-      Description: CodeBuild for building image
-      Cache:
-        Location: LOCAL
-        Modes:
-          - LOCAL_SOURCE_CACHE
-          - LOCAL_DOCKER_LAYER_CACHE
-        Type: LOCAL
-      Source:
-        Type: GITHUB
-        Location: !Ref GitURL
-        BuildSpec: 
-          !Sub
-            - |
-              version: 0.2
-              phases:
-                pre_build:
-                  commands:
-                    - pip3 install awscli 
-                    - aws ecr get-login-password --region ${AWS::Region} | docker login --username AWS --password-stdin ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com
-                build:
-                  commands:
-                    - echo Build started on `date`
-                    - docker build -t ${StreamlitImageRepo} .
-                    - docker tag ${StreamlitImageRepo}:latest ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${StreamlitImageRepo}:latest
-                post_build:
-                  commands:
-                    - echo Build completed on `date`
-                    - docker push ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${StreamlitImageRepo}:latest
-            - { 
-                StreamlitImageRepo: !Ref StreamlitImageRepo
-              }
-      Environment:
-        Type: LINUX_CONTAINER
-        Image: aws/codebuild/amazonlinux2-x86_64-standard:5.0
-        ComputeType: BUILD_GENERAL1_SMALL
-      ServiceRole: !GetAtt StreamlitCodeBuildExecutionRole.Arn
-      TimeoutInMinutes: 10
-      Artifacts:
-        Type: NO_ARTIFACTS
-  
-  StreamlitCodeBuildLogGroup:
-    Type: AWS::Logs::LogGroup
-    Properties:
-      LogGroupName: !Sub "/aws/codebuild/${StreamlitCodeBuild}"
-      RetentionInDays: 7
- 
-  # Start initial codebuild
-  StreamlitBuildCustomResourceRole:
-    Type: AWS::IAM::Role
-    Properties:
-      RoleName: !Join ['-', ['BuildResourceRole', !Ref EnvironmentName]]
-      AssumeRolePolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-          - Effect: 'Allow'
-            Principal:
-              Service:
-                - lambda.amazonaws.com
-            Action:
-              - 'sts:AssumeRole'
-      Path: "/"
-      Policies:
-        - PolicyName: LambdaCustomPolicy
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - codebuild:StartBuild
-                  - codebuild:BatchGetBuilds
-                Resource:
-                  - !GetAtt StreamlitCodeBuild.Arn
-              - Effect: 'Allow'
-                Action:
-                  - 'logs:CreateLogGroup'
-                  - 'logs:CreateLogStream'
-                  - 'logs:PutLogEvents'
-                  - 'logs:PutRetentionPolicy'
-                Resource: '*'
-
-  StreamlitBuildCustomResourceFunction:
-    Type: "AWS::Lambda::Function"
-    Properties:
-      FunctionName: !Join ['-', ['BuildResourceF', !Ref EnvironmentName]]
-      Handler: index.handler
-      Role: !GetAtt StreamlitBuildCustomResourceRole.Arn
-      Timeout: 300
-      Runtime: python3.12
-      Code:
-        ZipFile: !Sub |
-                import boto3
-                from time import sleep
-                import cfnresponse
-
-                codebuild = boto3.client("codebuild")
-
-                def handler(event, context):
-                  try:
-                    request_type = event['RequestType']
-                    if request_type == 'Create':
-                      status = 'STARTING'
-                      
-                      build_id = codebuild.start_build(projectName=event['ResourceProperties']['PROJECT'])['build']['id']
-                      while status not in ['SUCCEEDED', 'FAILED', 'STOPPED', 'FAULT', 'TIMED_OUT']:
-                        status = codebuild.batch_get_builds(ids=[build_id])['builds'][0]['buildStatus']
-                        sleep(15)
-                      if status in ['FAILED', 'STOPPED', 'FAULT', 'TIMED_OUT']:
-                        print("Initial CodeBuild failed")
-                        cfnresponse.send(event, context, cfnresponse.FAILED, {})
-                        return
-                  except Exception as ex:
-                    print(ex)
-                    cfnresponse.send(event, context, cfnresponse.FAILED, {})
-                  else:
-                    cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
-
-  StreamlitBuildCustomResource:
-    Type: Custom::BuildCode
-    Properties:
-      ServiceToken: !GetAtt StreamlitBuildCustomResourceFunction.Arn
-      PROJECT: !Ref StreamlitCodeBuild
-
- # ECS Task and Service
   StreamlitExecutionRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Join ['-', ['StreamlitExecutionRole', !Ref EnvironmentName]]
       AssumeRolePolicyDocument:
         Statement:
           - Effect: Allow
@@ -573,7 +309,6 @@ Resources:
   StreamlitECSTaskRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Join ['-', ['StreamlitECSTaskRole', !Ref EnvironmentName]]
       AssumeRolePolicyDocument:
         Statement:
           - Effect: Allow
@@ -589,7 +324,7 @@ Resources:
                 Action:
                   - "ssm:GetParameter"
                 Resource:
-                  - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/streamlitapp/${EnvironmentName}/*"
+                  - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/streamlitapp/*"
               - Effect: 'Allow'
                 Action:
                   - "kms:Decrypt"
@@ -603,6 +338,7 @@ Resources:
 
   StreamlitLogGroup:
     DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Type: AWS::Logs::LogGroup
     Properties:
       RetentionInDays: 7
@@ -610,15 +346,6 @@ Resources:
   StreamlitTaskDefinition:
     Type: AWS::ECS::TaskDefinition
     Properties:
-      # HealthCheck:
-      #   Command:
-      #     - CMD-SHELL
-      #     - curl -f http://localhost:80 || exit 1
-      #   Interval: 30
-      #   Retries: 3
-      #   StartPeriod: 120
-      #   Timeout: 15
-      Family: !Join ['-', ['StreamlitTaskDefinition', !Ref EnvironmentName]]
       Memory: !Ref Memory
       Cpu: !Ref Cpu
       NetworkMode: awsvpc
@@ -629,7 +356,7 @@ Resources:
       TaskRoleArn: !GetAtt StreamlitECSTaskRole.Arn
       ExecutionRoleArn: !GetAtt StreamlitExecutionRole.Arn
       ContainerDefinitions: 
-        - Name: !Join ['-', ['ContainerDefinition', !Ref EnvironmentName]]
+        - Name: !Join ['-', ['ContainerDefinition', !Sub "${AWS::StackName}"]]
           LogConfiguration:
             LogDriver: "awslogs"
             Options: 
@@ -650,7 +377,6 @@ Resources:
       - StreamlitALBListenerRule
     Type: AWS::ECS::Service
     Properties:
-      ServiceName: !Join ['-', ['StreamlitECSService', !Ref EnvironmentName]]
       Cluster: !Ref StreamlitCluster
       TaskDefinition: !Ref StreamlitTaskDefinition
       DesiredCount: !Ref Task
@@ -664,15 +390,17 @@ Resources:
           SecurityGroups:
             - !Ref StreamlitContainerSecurityGroup
       LoadBalancers:
-        - ContainerName: !Join ['-', ['ContainerDefinition', !Ref EnvironmentName]]
+        - ContainerName: !Join ['-', ['ContainerDefinition', !Sub "${AWS::StackName}"]]
           ContainerPort: !Ref ContainerPort
           TargetGroupArn: !Ref StreamlitContainerTargetGroup
+ 
+  ########################
+  ##### AutoScaling #####
+  ######################
   
-  # Task AutoScaling
   StreamlitAutoScalingRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Join ['-', [StreamlitScalingRole, !Ref EnvironmentName]]
       AssumeRolePolicyDocument:
         Statement:
           - Effect: Allow
@@ -696,7 +424,7 @@ Resources:
   StreamlitAutoScalingPolicy:
     Type: AWS::ApplicationAutoScaling::ScalingPolicy
     Properties:
-      PolicyName: !Join ['', [AutoScalingPolicy, !Ref EnvironmentName]]
+      PolicyName: !Join ['', [AutoScalingPolicy, !Sub "${AWS::StackName}"]]
       PolicyType: TargetTrackingScaling
       ScalingTargetId: !Ref StreamlitAutoScalingTarget
       TargetTrackingScalingPolicyConfiguration:
@@ -707,7 +435,10 @@ Resources:
         # Keep things at or lower than 50% CPU utilization, for example
         TargetValue: !Ref TargetCpu
 
-  # Application Load Balancer
+  ######################################
+  ##### Application Load Balancer #####
+  ####################################
+
   StreamlitContainerTargetGroup:
     Type: "AWS::ElasticLoadBalancingV2::TargetGroup"
     Properties:
@@ -715,7 +446,6 @@ Resources:
       Protocol: "HTTP"
       TargetType: ip
       VpcId: !Ref VPCId
-      Name: !Join ['-', ['StreamlitContainerTG', !Ref EnvironmentName]]
       TargetGroupAttributes:
         - Key: stickiness.enabled
           Value: true
@@ -727,7 +457,6 @@ Resources:
       - LoggingBucketPolicy
     Type: "AWS::ElasticLoadBalancingV2::LoadBalancer"
     Properties:
-      Name: !Join ['-', ['StreamlitALB', !Ref EnvironmentName]]
       LoadBalancerAttributes:
         - Key: access_logs.s3.enabled
           Value: true
@@ -773,8 +502,11 @@ Resources:
               - !Join ['-', [!Sub "${AWS::StackName}", !Sub "${AWS::AccountId}"]]
       ListenerArn: !Ref StreamlitHTTPListener
       Priority: 1
+
+  #########################
+  ##### Distribution #####
+  #######################
   
-  # CloudFront
   Distribution:
     Type: "AWS::CloudFront::Distribution"
     Properties:
@@ -820,13 +552,275 @@ Resources:
         Logging: 
           Bucket: !Sub '${LoggingBucket}.s3.amazonaws.com'
           IncludeCookies: true
-          Prefix: !Sub distribution-${EnvironmentName}-logs/
+          Prefix: !Sub distribution-${AWS::StackName}-logs/
         ViewerCertificate:
           CloudFrontDefaultCertificate: true
           MinimumProtocolVersion: TLSv1.2_2021
       Tags:
         - Key: CloudfrontStreamlitApp
           Value: !Sub ${AWS::StackName}-Cloudfront
+  
+  #############################
+  ##### Docker CodeBuild #####
+  ###########################
+
+  StreamlitCodeBuildExecutionRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: 'Allow'
+            Principal:
+              Service:
+                - 'codebuild.amazonaws.com'
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - !Ref LogsPolicy
+      Policies:
+        - PolicyName: 'CodeBuildPolicy'
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: 'Allow'
+                Action:
+                  - 'ecr:GetAuthorizationToken'
+                Resource:
+                  - '*'
+              - Effect: 'Allow'
+                Action:
+                  - 'ecr:UploadLayerPart'
+                  - 'ecr:PutImage'
+                  - 'ecr:InitiateLayerUpload'
+                  - 'ecr:CompleteLayerUpload'
+                  - 'ecr:BatchCheckLayerAvailability'
+                Resource:
+                  - !GetAtt StreamlitImageRepo.Arn
+
+  StreamlitCodeBuild:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Description: CodeBuild for building image
+      Cache:
+        Location: LOCAL
+        Modes:
+          - LOCAL_SOURCE_CACHE
+          - LOCAL_DOCKER_LAYER_CACHE
+        Type: LOCAL
+      Source:
+        Type: GITHUB
+        Location: !Ref GitURL
+        BuildSpec: 
+          !Sub
+            - |
+              version: 0.2
+              phases:
+                pre_build:
+                  commands:
+                    - pip3 install awscli 
+                    - aws ecr get-login-password --region ${AWS::Region} | docker login --username AWS --password-stdin ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com
+                build:
+                  commands:
+                    - echo Build started on `date`
+                    - docker build -t ${StreamlitImageRepo} .
+                    - docker tag ${StreamlitImageRepo}:latest ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${StreamlitImageRepo}:latest
+                post_build:
+                  commands:
+                    - echo Build completed on `date`
+                    - docker push ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${StreamlitImageRepo}:latest
+            - { 
+                StreamlitImageRepo: !Ref StreamlitImageRepo
+              }
+      Environment:
+        Type: LINUX_CONTAINER
+        Image: aws/codebuild/amazonlinux2-x86_64-standard:5.0
+        ComputeType: BUILD_GENERAL1_SMALL
+      ServiceRole: !GetAtt StreamlitCodeBuildExecutionRole.Arn
+      TimeoutInMinutes: 10
+      Artifacts:
+        Type: NO_ARTIFACTS
+  
+  StreamlitCodeBuildLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      RetentionInDays: 7
+  
+  ###################################
+  ##### Start Docker CodeBuild #####
+  #################################
+
+  StreamlitBuildCustomResourceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: 'Allow'
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: "/"
+      Policies:
+        - PolicyName: LambdaCustomPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - codebuild:StartBuild
+                  - codebuild:BatchGetBuilds
+                Resource:
+                  - !GetAtt StreamlitCodeBuild.Arn
+              - Effect: 'Allow'
+                Action:
+                  - 'logs:CreateLogGroup'
+                  - 'logs:CreateLogStream'
+                  - 'logs:PutLogEvents'
+                  - 'logs:PutRetentionPolicy'
+                Resource: '*'
+
+  StreamlitBuildCustomResourceFunction:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      Handler: index.handler
+      Role: !GetAtt StreamlitBuildCustomResourceRole.Arn
+      Timeout: 300
+      Runtime: python3.12
+      Code:
+        ZipFile: !Sub |
+                import boto3
+                from time import sleep
+                import cfnresponse
+
+                codebuild = boto3.client("codebuild")
+
+                def handler(event, context):
+                  try:
+                    request_type = event['RequestType']
+                    if request_type == 'Create':
+                      status = 'STARTING'
+                      
+                      build_id = codebuild.start_build(projectName=event['ResourceProperties']['PROJECT'])['build']['id']
+                      while status not in ['SUCCEEDED', 'FAILED', 'STOPPED', 'FAULT', 'TIMED_OUT']:
+                        status = codebuild.batch_get_builds(ids=[build_id])['builds'][0]['buildStatus']
+                        sleep(15)
+                      if status in ['FAILED', 'STOPPED', 'FAULT', 'TIMED_OUT']:
+                        print("Initial CodeBuild failed")
+                        cfnresponse.send(event, context, cfnresponse.FAILED, {})
+                        return
+                  except Exception as ex:
+                    print(ex)
+                    cfnresponse.send(event, context, cfnresponse.FAILED, {})
+                  else:
+                    cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+
+  StreamlitBuildCustomResource:
+    DependsOn: StreamlitECSRoleCustomResource
+    Type: Custom::BuildCode
+    Properties:
+      ServiceToken: !GetAtt StreamlitBuildCustomResourceFunction.Arn
+      PROJECT: !Ref StreamlitCodeBuild
+
+  ################################
+  ##### ECS Custom Resource #####
+  ##############################
+
+  StreamlitECSRoleCustomResourceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: 'Allow'
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: "/"
+      ManagedPolicyArns:
+        - !Ref LogsPolicy
+      Policies:
+        - PolicyName: IAMPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - iam:ListRoles
+                Resource:
+                  - "*"
+              - Effect: Allow
+                Action:
+                  - iam:GetRole
+                  - iam:CreateServiceLinkedRole
+                  - iam:AttachRolePolicy
+                Resource:
+                  - "*"
+
+  StreamlitECSRoleCustomResourceFunction:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      Handler: index.handler
+      Role: !GetAtt StreamlitECSRoleCustomResourceRole.Arn
+      Timeout: 300
+      Runtime: python3.12
+      Code:
+        ZipFile: !Sub |
+              import boto3
+              from botocore.exceptions import ClientError
+              import cfnresponse
+              iam_client = boto3.client('iam')
+
+              def handler(event, context):
+                  
+                  try:
+                    request_type = event['RequestType']
+                    print(request_type)
+
+                    if request_type == 'Create':
+                      desired_ecs_role_name = "AWSServiceRoleForECS"
+                      desired_ecs_scaling_role_name = "AWSServiceRoleForApplicationAutoScaling_ECSService"
+
+                      try:
+                        iam_client.get_role(RoleName=desired_ecs_role_name)
+                        ecs_role_exists = True
+                      except ClientError as e:
+                        if e.response['Error']['Code'] == 'NoSuchEntity':
+                          ecs_role_exists = False
+                        else:
+                          ecs_role_exists = True
+                      
+                      try:
+                        iam_client.get_role(RoleName=desired_ecs_scaling_role_name)
+                        ecs_scaling_role_exists = True
+                      except ClientError as e:
+                        if e.response['Error']['Code'] == 'NoSuchEntity':
+                          ecs_scaling_role_exists = False
+                        else:
+                          ecs_scaling_role_exists = True
+                      
+                      print(f"ECS service role exist? {ecs_role_exists}")
+                      if not ecs_role_exists:
+                        iam_client.create_service_linked_role(AWSServiceName="ecs.amazonaws.com")
+                      
+                      print(f"ECS scaling service role exist? {ecs_scaling_role_exists}")
+                      if not ecs_scaling_role_exists:
+                        iam_client.create_service_linked_role(AWSServiceName="ecs.application-autoscaling.amazonaws.com")
+                        
+                  except Exception as ex:
+                    print(ex)
+                    cfnresponse.send(event, context, cfnresponse.FAILED, {})
+                  else:
+                    cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+  
+  StreamlitECSRoleCustomResource:
+    Type: Custom::ECSRole
+    Properties:
+      ServiceToken: !GetAtt StreamlitECSRoleCustomResourceFunction.Arn 
 
 Outputs:
   CloudfrontURL:
