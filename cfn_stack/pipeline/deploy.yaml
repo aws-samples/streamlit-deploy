@@ -344,6 +344,7 @@ Resources:
   StreamlitContainerTargetGroup:
     Type: "AWS::ElasticLoadBalancingV2::TargetGroup"
     Properties:
+      Name: !Sub "StreamlitTG${AWS::StackName}"
       Port: !Ref ContainerPort
       Protocol: "HTTP"
       TargetType: ip
@@ -353,13 +354,11 @@ Resources:
           Value: true
         - Key: stickiness.type
           Value: lb_cookie
-      Tags:
-        - Key: Environment
-          Value: !Sub "StreamlitALB${AWS::StackName}"
 
   StreamlitApplicationLoadBalancer:
     Type: "AWS::ElasticLoadBalancingV2::LoadBalancer"
     Properties:
+      Name: !Sub "StreamlitALB${AWS::StackName}"
       LoadBalancerAttributes:
         - Key: access_logs.s3.enabled
           Value: true
@@ -377,9 +376,6 @@ Resources:
       SecurityGroups: 
         - !Ref StreamlitALBSecurityGroup
       IpAddressType: ipv4
-      Tags:
-        - Key: Environment
-          Value: !Sub "StreamlitALB${AWS::StackName}"
 
   StreamlitHTTPListener:
     Type: "AWS::ElasticLoadBalancingV2::Listener"
@@ -393,9 +389,6 @@ Resources:
             MessageBody: Access denied
             StatusCode: 403
           Type: fixed-response
-      Tags:
-        - Key: Environment
-          Value: !Sub "StreamlitALB${AWS::StackName}"
 
   StreamlitALBListenerRule:
     Type: AWS::ElasticLoadBalancingV2::ListenerRule
@@ -411,9 +404,6 @@ Resources:
               - !Join ['-', [!Sub "${AWS::StackName}", !Sub "${AWS::AccountId}"]]
       ListenerArn: !Ref StreamlitHTTPListener
       Priority: 1
-      Tags:
-        - Key: Environment
-          Value: !Sub "StreamlitALB${AWS::StackName}"
   
   #########################
   ##### Distribution #####

@@ -526,7 +526,7 @@ Resources:
                       - arn:aws:ecs:${AWS::Region}:${AWS::AccountId}:cluster/${StreamlitClusterName}
                       - StreamlitClusterName: !If [IsDeployVPCInfrastructure, !GetAtt Infrastructure.Outputs.StreamlitCluster, !ImportValue StreamlitCluster]
                   - !Sub 
-                      - arn:aws:ecs:${AWS::Region}:${AWS::AccountId}:service/${StreamlitClusterName}/StreamlitECSService*
+                      - arn:aws:ecs:${AWS::Region}:${AWS::AccountId}:service/${StreamlitClusterName}/${AWS::StackName}deploy-StreamlitECSService*
                       - StreamlitClusterName: !If [IsDeployVPCInfrastructure, !GetAtt Infrastructure.Outputs.StreamlitCluster, !ImportValue StreamlitCluster]
               # - Effect: 'Allow'
               #   Action:
@@ -629,10 +629,10 @@ Resources:
                   - 'elasticloadbalancing:DeleteRule'
                   - 'elasticloadbalancing:DeleteTargetGroup'
                 Resource:
-                  - !Sub arn:aws:elasticloadbalancing:${AWS::Region}:${AWS::AccountId}:targetgroup/*/*
-                  - !Sub arn:aws:elasticloadbalancing:${AWS::Region}:${AWS::AccountId}:loadbalancer/app/*/*
-                  - !Sub arn:aws:elasticloadbalancing:${AWS::Region}:${AWS::AccountId}:listener/app/*/*/*
-                  - !Sub arn:aws:elasticloadbalancing:${AWS::Region}:${AWS::AccountId}:listener-rule/app/*/*/*/*
+                  - !Sub arn:aws:elasticloadbalancing:${AWS::Region}:${AWS::AccountId}:targetgroup/StreamlitALB${AWS::StackName}/*
+                  - !Sub arn:aws:elasticloadbalancing:${AWS::Region}:${AWS::AccountId}:loadbalancer/app/StreamlitALB${AWS::StackName}/*
+                  - !Sub arn:aws:elasticloadbalancing:${AWS::Region}:${AWS::AccountId}:listener/app/StreamlitALB${AWS::StackName}/*/*
+                  - !Sub arn:aws:elasticloadbalancing:${AWS::Region}:${AWS::AccountId}:listener-rule/app/StreamlitALB${AWS::StackName}/*/*/*
                 Condition:
                   StringEquals:
                     'aws:ResourceTag/Environment': !Join ['', ['StreamlitALB', !Sub "${AWS::StackName}deploy"]]
