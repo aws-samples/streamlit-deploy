@@ -1,5 +1,10 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: Codepipeline for Streamlit App
+Description: This AWS CloudFormation template sets up the following resources
+  1. Amazon Elastic Container Registry (ECR) for storing the Docker image, S3 buckets for artifacts, code, and CloudTrail logs, and logging-related resources.
+  2. IAM roles and policies for CodeBuild, CodePipeline, CloudFormation execution, and other components.
+  3. CodeBuild project for building and pushing the Docker image, and a Lambda function for invalidating the CloudFront cache.
+  4. CodePipeline for automating the deployment process, and a CloudWatch event rule for triggering the pipeline on code changes.
+  5. Custom resources for initializing the code S3 bucket, creating ECS service-linked roles, and cleaning up resources during stack deletion.
 
 Metadata:
   'AWS::CloudFormation::Interface':
@@ -355,6 +360,7 @@ Resources:
       IncludeGlobalServiceEvents: true
       IsLogging: true
       IsMultiRegionTrail: true
+
   ###################
   ##### Roles ######
   #################
@@ -629,10 +635,30 @@ Resources:
                   - 'elasticloadbalancing:DeleteRule'
                   - 'elasticloadbalancing:DeleteTargetGroup'
                 Resource:
-                  - !Sub arn:aws:elasticloadbalancing:${AWS::Region}:${AWS::AccountId}:targetgroup/StreamlitALB${AWS::StackName}/*
-                  - !Sub arn:aws:elasticloadbalancing:${AWS::Region}:${AWS::AccountId}:loadbalancer/app/StreamlitALB${AWS::StackName}/*
-                  - !Sub arn:aws:elasticloadbalancing:${AWS::Region}:${AWS::AccountId}:listener/app/StreamlitALB${AWS::StackName}/*/*
-                  - !Sub arn:aws:elasticloadbalancing:${AWS::Region}:${AWS::AccountId}:listener-rule/app/StreamlitALB${AWS::StackName}/*/*/*
+                  - !Sub 
+                      - 
+                        arn:aws:elasticloadbalancing:${AWS::Region}:${AWS::AccountId}:targetgroup/${UniqueId}/*
+                      - {
+                          UniqueId: !Select [0, !Split ["-", !Select [2, !Split ["/", !Ref AWS::StackId]]]]
+                        }
+                  - !Sub 
+                      - 
+                        arn:aws:elasticloadbalancing:${AWS::Region}:${AWS::AccountId}:loadbalancer/app/${UniqueId}/*
+                      - {
+                          UniqueId: !Select [0, !Split ["-", !Select [2, !Split ["/", !Ref AWS::StackId]]]]
+                        }
+                  - !Sub 
+                      - 
+                        arn:aws:elasticloadbalancing:${AWS::Region}:${AWS::AccountId}:listener/app/${UniqueId}/*/*
+                      - {
+                          UniqueId: !Select [0, !Split ["-", !Select [2, !Split ["/", !Ref AWS::StackId]]]]
+                        }
+                  - !Sub 
+                      - 
+                        arn:aws:elasticloadbalancing:${AWS::Region}:${AWS::AccountId}:listener-rule/app/${UniqueId}/*/*/*
+                      - {
+                          UniqueId: !Select [0, !Split ["-", !Select [2, !Split ["/", !Ref AWS::StackId]]]]
+                        }
                 Condition:
                   StringEquals:
                     'aws:ResourceTag/Environment': !Join ['', ['StreamlitALB', !Sub "${AWS::StackName}deploy"]]
@@ -825,7 +851,7 @@ Resources:
   ##### Infrastructure CodePipeline ######
   #######################################
 
-  StreamlitCodePipeLineInfra:
+  StreamlitCodePipeLine:
     Type: AWS::CodePipeline::Pipeline
     Properties:
       ArtifactStore: 
@@ -886,7 +912,7 @@ Resources:
               Capabilities: CAPABILITY_NAMED_IAM
               ParameterOverrides: !Sub 
                   - | 
-                    {"StreamLitImageURI" : { "Fn::GetParam" : ["build-output-artifacts", "imageDetail.json", "StreamLitImageURI"] },"StreamlitCluster": "${Cluster}", "Cpu": "${Cpu}", "Memory":"${Memory}","Task":"${DesiredTaskCount}","Min":"${MinContainers}","Max":"${MaxContainers}","AutoScalingTargetValue":"${AutoScalingTargetValue}","StreamlitPublicSubnetA": "${PubSubnetA}","StreamlitPublicSubnetB": "${PubSubnetB}","StreamlitPrivateSubnetA": "${PvtSubnetA}","StreamlitPrivateSubnetB": "${PvtSubnetB}","LoggingBucketName": "${LoggingBucketName}","StreamlitVPC": "${VPC}"},
+                    {"StreamLitImageURI" : { "Fn::GetParam" : ["build-output-artifacts", "imageDetail.json", "StreamLitImageURI"] },"StreamlitCluster": "${Cluster}", "Cpu": "${Cpu}", "Memory":"${Memory}","Task":"${DesiredTaskCount}","Min":"${MinContainers}","Max":"${MaxContainers}","AutoScalingTargetValue":"${AutoScalingTargetValue}","StreamlitPublicSubnetA": "${PubSubnetA}","StreamlitPublicSubnetB": "${PubSubnetB}","StreamlitPrivateSubnetA": "${PvtSubnetA}","StreamlitPrivateSubnetB": "${PvtSubnetB}","UniqueId": "${UniqueId}", "LoggingBucketName": "${LoggingBucketName}","StreamlitVPC": "${VPC}"},
                   - {  
                       Cluster: !If [IsDeployVPCInfrastructure, !GetAtt Infrastructure.Outputs.StreamlitCluster, !ImportValue StreamlitCluster],
                       PubSubnetA: !If [IsDeployVPCInfrastructure, !GetAtt Infrastructure.Outputs.PublicSubnetA, !ImportValue Basic-PublicSubnetA],
@@ -894,6 +920,7 @@ Resources:
                       PvtSubnetA: !If [IsDeployVPCInfrastructure, !GetAtt Infrastructure.Outputs.PrivateSubnetA, !ImportValue Basic-PrivateSubnetA],
                       PvtSubnetB: !If [IsDeployVPCInfrastructure, !GetAtt Infrastructure.Outputs.PrivateSubnetB, !ImportValue Basic-PrivateSubnetB],
                       LoggingBucketName: !Ref LoggingBucket,
+                      UniqueId: !Select [0, !Split ["-", !Select [2, !Split ["/", !Ref AWS::StackId]]]],
                       VPC: !If [IsDeployVPCInfrastructure, !GetAtt Infrastructure.Outputs.VPC, !ImportValue Basic-VPC]
                    }
               RoleArn: 
@@ -942,9 +969,10 @@ Resources:
               -
                 Effect: Allow
                 Action: codepipeline:StartPipelineExecution
-                Resource: !Join [ '', [ 'arn:aws:codepipeline:', !Ref 'AWS::Region', ':', !Ref 'AWS::AccountId', ':', !Ref StreamlitCodePipeLineInfra] ]
+                Resource: !Join [ '', [ 'arn:aws:codepipeline:', !Ref 'AWS::Region', ':', !Ref 'AWS::AccountId', ':', !Ref StreamlitCodePipeLine] ]
   
   AmazonCloudWatchEventRule:
+    DependsOn: StreamlitBuildCustomResource
     Type: AWS::Events::Rule
     Properties:
       EventPattern:
@@ -964,7 +992,7 @@ Resources:
       Targets:
         -
           Arn:
-            !Join [ '', [ 'arn:aws:codepipeline:', !Ref 'AWS::Region', ':', !Ref 'AWS::AccountId', ':',  !Ref StreamlitCodePipeLineInfra]]
+            !Join [ '', [ 'arn:aws:codepipeline:', !Ref 'AWS::Region', ':', !Ref 'AWS::AccountId', ':',  !Ref StreamlitCodePipeLine]]
           RoleArn: !GetAtt StreamlitCloudWatchEventRole.Arn
           Id: codepipeline-AppPipeline
 

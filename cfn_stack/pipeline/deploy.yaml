@@ -1,5 +1,10 @@
 AWSTemplateFormatVersion: 2010-09-09
-Description: Infrastructure for the Fargate ECS Cluster.
+Description:
+  This CloudFormation template provisions
+  1. ECS Cluster, Task Definition, and Service for hosting the Streamlit application on AWS Fargate.
+  2. Application Load Balancer, Target Group, Security Groups, and Listener Rules for load balancing and routing traffic.
+  3. AutoScaling configuration, including target and scaling policy, for automatically scaling ECS tasks based on CPU utilization.
+  4. CloudFront Distribution with caching and content delivery settings, using the ALB as the origin.
 
 Metadata:
   'AWS::CloudFormation::Interface':
@@ -27,8 +32,17 @@ Metadata:
       - StreamlitPrivateSubnetA
       - StreamlitPrivateSubnetB
       - LoggingBucketName
+    - Label:
+        default: 'Environment Configuration'
+      Parameters:
+      - UniqueId
 
 Parameters:
+
+  UniqueId:
+    Description: A unique identifier for resources in this stack
+    Type: String
+    Default: streamlit-example
 
   StreamlitCluster:
     Description: StreamlitCluster
@@ -344,7 +358,7 @@ Resources:
   StreamlitContainerTargetGroup:
     Type: "AWS::ElasticLoadBalancingV2::TargetGroup"
     Properties:
-      Name: !Sub "StreamlitTG${AWS::StackName}"
+      Name: !Ref UniqueId
       Port: !Ref ContainerPort
       Protocol: "HTTP"
       TargetType: ip
@@ -358,7 +372,7 @@ Resources:
   StreamlitApplicationLoadBalancer:
     Type: "AWS::ElasticLoadBalancingV2::LoadBalancer"
     Properties:
-      Name: !Sub "StreamlitALB${AWS::StackName}"
+      Name: !Sub "ALB${AWS::StackName}"
       LoadBalancerAttributes:
         - Key: access_logs.s3.enabled
           Value: true
