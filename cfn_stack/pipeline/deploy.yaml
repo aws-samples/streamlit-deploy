@@ -372,7 +372,7 @@ Resources:
   StreamlitApplicationLoadBalancer:
     Type: "AWS::ElasticLoadBalancingV2::LoadBalancer"
     Properties:
-      Name: !Sub "ALB${AWS::StackName}"
+      Name: !Ref UniqueId
       LoadBalancerAttributes:
         - Key: access_logs.s3.enabled
           Value: true

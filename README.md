@@ -183,8 +183,8 @@ For invoking Bedrock Agents from Streamlit app add the following policy to `Stre
 ## Clean up CICD deployment
 - Open the CloudFormation console.
 - Select the stack `codepipeline.yaml` you created then click **Delete**. Wait for the stack to be deleted.
-- Delete the nested stack `<StackName>-Infra-<StackId>` created by `codepipeline.yaml`. Please ensure that you refrain from deleting this stack if there are any additional web deployments utilizing this repository within the specified region of your current work environment.
-- Delete the role `StreamlitCfnRole*` manually.
+- Delete the nested stack `<StackName>-Infrastructure-*` created by `codepipeline.yaml`. Please ensure that you refrain from deleting this stack if there are any additional web deployments utilizing this repository within the specified region of your current work environment.
+- Delete the role `<StackName>-StreamlitCloudformationExecutionRole-*` manually.
 
 
 ## Architecture Simple Deployment
