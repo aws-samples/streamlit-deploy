@@ -659,9 +659,6 @@ Resources:
                       - {
                           UniqueId: !Select [0, !Split ["-", !Select [2, !Split ["/", !Ref AWS::StackId]]]]
                         }
-                Condition:
-                  StringEquals:
-                    'aws:ResourceTag/Environment': !Join ['', ['StreamlitALB', !Sub "${AWS::StackName}deploy"]]
               - Effect: 'Allow'
                 Action:                  
                   - 'elasticloadbalancing:CreateLoadBalancer'
